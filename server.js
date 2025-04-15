@@ -5,7 +5,7 @@ const fs = require('fs');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3444;
 
 // Enable CORS
 app.use(cors());
@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname)));
 
 // Define storage location on another drive
 // Using D: drive for file storage
-const STORAGE_PATH = 'D:/FileStorage';
+const STORAGE_PATH = '/mnt/hdd0/FSVstorage/';
 
 // Create storage directory if it doesn't exist
 if (!fs.existsSync(STORAGE_PATH)) {
