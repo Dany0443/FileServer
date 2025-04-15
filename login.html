@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --success-color: #4cc9f0;
+            --danger-color: #f72585;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+            --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+            --transition-speed: 0.3s;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--dark-color);
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        
+        .login-container {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            padding: 30px;
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: var(--primary-color);
+            font-size: 2rem;
+            font-weight: 600;
+            position: relative;
+        }
+        
+        .login-header::after {
+            content: '';
+            display: block;
+            width: 80px;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+            margin: 10px auto 0;
+            border-radius: 2px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--dark-color);
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color var(--transition-speed);
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+        }
+        
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color var(--transition-speed);
+        }
+        
+        .btn:hover {
+            background-color: var(--secondary-color);
+        }
+        
+        .error-message {
+            color: var(--danger-color);
+            margin-top: 20px;
+            text-align: center;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .logout-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            background-color: var(--danger-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color var(--transition-speed);
+            display: none;
+        }
+        
+        .logout-btn:hover {
+            background-color: #e01e79;
+        }
+    </style>
+</head>
+<body>
+    <button id="logoutBtn" class="logout-btn">Logout</button>
+    <div class="login-container">
+        <h1 class="login-header">Login</h1>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" class="form-control" required>
+            </div>
+            <button type="submit" class="btn">Login</button>
+            <div id="errorMessage" class="error-message">Invalid username or password</div>
+        </form>
+    </div>
+
+    <script>
+        // Check if user is already logged in - update to use localStorage
+        function checkAuth() {
+            if (localStorage.getItem('authenticated') === 'true') {
+                window.location.href = 'index.html';
+            }
+        }
+
+        // Run auth check when page loads
+        checkAuth();
+
+        // Handle login form submission
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('errorMessage');
+            
+            // Check credentials
+            if (username === 'admin' && password === 'Giveme200$') {
+                // Set authentication in localStorage instead of sessionStorage
+                localStorage.setItem('authenticated', 'true');
+                // Redirect to main page
+                window.location.href = 'index.html';
+            } else {
+                // Show error message
+                errorMessage.style.display = 'block';
+                // Clear password field
+                document.getElementById('password').value = '';
+            }
+        });
+        
+        // Handle logout
+        document.getElementById('logoutBtn').addEventListener('click', function() {
+            // Clear authentication from localStorage
+            localStorage.removeItem('authenticated');
+            // Reload the page
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>
