@@ -22,11 +22,15 @@ A Google Drive-like file storage application for you and your friends, built wit
    npm install
    
 3. **Configure users**
- - Edit users.json to add your users. Passwords must be hashed with bcrypt.
+ - Edit users.
+ - json to add your users.
+ - Passwords must be hashed with bcrypt.
 
 4. **Start the server**
 - Run:
-  node server.js
+-```bash
+   npm server
+  
 The server will start on http://localhost:3000 by default.
 
 ## Notes
