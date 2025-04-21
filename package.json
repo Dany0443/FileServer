@@ -1,7 +1,7 @@
 {
-  "name": "file-storage-viewer",
+  "name": "wjt-project",
   "version": "1.0.0",
-  "description": "Google Drive-like file storage application",
+  "description": "WJT Project - Google Drive-like file storage application",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
