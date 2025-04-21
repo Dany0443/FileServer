@@ -1,0 +1,18 @@
+[
+  {
+    "username": "dan",
+    "password": "hashedpassword"
+  },
+  {
+    "username": "example",
+    "password": "yourhashedpassword1"
+  },
+  {
+    "username": "friend1",
+    "password": "hashedpassword"
+  },
+  {
+    "username": "friend2",
+    "password": "hashedpassword"
+  }
+]

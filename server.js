@@ -2,6 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const cors = require('cors');
 
 const app = express();
@@ -20,7 +22,6 @@ app.use(express.urlencoded({ extended: true, limit: '10gb' }));
 app.use(express.static(path.join(__dirname)));
 
 // Define storage location on another drive
-// Using D: drive for file storage
 const STORAGE_PATH = 'C:\\FSV';
 
 // Create storage directory if it doesn't exist
@@ -39,13 +40,11 @@ const storage = multer.diskStorage({
         cb(null, STORAGE_PATH);
     },
     filename: function (req, file, cb) {
-        // Create a unique filename with original name and timestamp
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         cb(null, uniqueSuffix + '-' + file.originalname);
     }
 });
 
-// Configure multer with increased file size limits (10GB)
 const upload = multer({ 
     storage: storage,
     limits: {
@@ -53,16 +52,55 @@ const upload = multer({
     }
 });
 
-// Get list of all files
-app.get('/api/files', (req, res) => {
+// Load users from whitelist file
+const USERS_FILE = path.join(__dirname, 'users.json');
+let users = [];
+function loadUsers() {
+    try {
+        users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    } catch (err) {
+        console.error('Failed to load users.json:', err.message);
+        process.exit(1);
+    }
+}
+loadUsers();
+
+// In-memory token store (for demo; use Redis or DB for production)
+const tokens = new Map();
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    const user = users.find(u => u.username === username);
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    tokens.set(token, username);
+
+    res.json({ token });
+});
+
+// Middleware to protect API endpoints
+function requireAuth(req, res, next) {
+    const token = req.headers['x-auth-token'];
+    if (token && tokens.has(token)) {
+        req.username = tokens.get(token);
+        next();
+    } else {
+        res.status(401).json({ error: 'Unauthorized' });
+    }
+}
+
+// Protect all file API endpoints
+app.get('/api/files', requireAuth, (req, res) => {
     fs.readdir(STORAGE_PATH, (err, files) => {
         if (err) {
             return res.status(500).json({ error: err.message });
         }
-        
         const fileList = [];
-        
-        // Process each file to get metadata
         const promises = files.map(filename => {
             return new Promise((resolve) => {
                 const filePath = path.join(STORAGE_PATH, filename);
@@ -71,10 +109,7 @@ app.get('/api/files', (req, res) => {
                         resolve(null);
                         return;
                     }
-                    
-                    // Extract original filename from the stored filename
                     const originalFilename = filename.substring(filename.indexOf('-', filename.indexOf('-') + 1) + 1);
-                    
                     fileList.push({
                         id: filename,
                         name: originalFilename,
@@ -87,22 +122,17 @@ app.get('/api/files', (req, res) => {
                 });
             });
         });
-        
         Promise.all(promises).then(() => {
-            // Sort files by modification time (newest first)
             fileList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             res.json(fileList);
         });
     });
 });
 
-// Upload a file
-app.post('/api/upload', upload.single('file'), (req, res) => {
+app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
-    
-    // Return file information
     res.json({
         id: req.file.filename,
         name: req.file.originalname,
@@ -112,32 +142,22 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     });
 });
 
-
-// Download a file
-app.get('/api/download/:id', (req, res) => {
+app.get('/api/download/:id', requireAuth, (req, res) => {
     const filename = req.params.id;
     const filePath = path.join(STORAGE_PATH, filename);
-    
-    // Check if file exists
     fs.access(filePath, fs.constants.F_OK, (err) => {
         if (err) {
             return res.status(404).json({ error: 'File not found' });
         }
-        
-        // Extract original filename for the download
         const originalFilename = filename.substring(filename.indexOf('-', filename.indexOf('-') + 1) + 1);
-        
-        // Set headers for file download
         res.setHeader('Content-Disposition', `attachment; filename="${originalFilename}"`);
         res.sendFile(filePath);
     });
 });
 
-// Delete a file
-app.delete('/api/files/:id', (req, res) => {
+app.delete('/api/files/:id', requireAuth, (req, res) => {
     const filename = req.params.id;
     const filePath = path.join(STORAGE_PATH, filename);
-    
     fs.unlink(filePath, (err) => {
         if (err) {
             return res.status(500).json({ error: err.message });

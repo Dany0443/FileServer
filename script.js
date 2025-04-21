@@ -34,20 +34,31 @@ gridViewBtn.addEventListener('click', () => switchView('grid'));
 // Fetch and display files
 function loadFiles() {
     showLoading();
-    
-    fetch('/api/files')
-        .then(response => response.json())
-        .then(data => {
-            files = data;
-            hideLoading();
-            updateFileCount();
-            renderFiles();
-        })
-        .catch(error => {
-            console.error('Error loading files:', error);
-            hideLoading();
-            showToast('Error loading files', 'error');
-        });
+
+    fetch('/api/files', {
+        headers: {
+            'x-auth-token': localStorage.getItem('token') || ''
+        }
+    })
+    .then(response => {
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+            return [];
+        }
+        return response.json();
+    })
+    .then(data => {
+        files = data;
+        hideLoading();
+        updateFileCount();
+        renderFiles();
+    })
+    .catch(error => {
+        console.error('Error loading files:', error);
+        hideLoading();
+        showToast('Error loading files', 'error');
+    });
 }
 
 // Upload file with progress tracking
@@ -58,6 +69,10 @@ function uploadFile() {
     const formData = new FormData();
     formData.append('file', file);
 
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload', true);
+    xhr.setRequestHeader('x-auth-token', localStorage.getItem('token') || '');
+
     // Show overlay and reset progress bar
     const progressOverlay = document.getElementById('progressOverlay');
     const progressBar = document.getElementById('progressBar');
@@ -65,8 +80,6 @@ function uploadFile() {
     progressOverlay.classList.remove('d-none');
     progressBar.style.width = '0%';
     uploadStatus.textContent = '';
-
-    const xhr = new XMLHttpRequest();
 
     xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
@@ -100,7 +113,6 @@ function uploadFile() {
         }, 2000);
     });
 
-    xhr.open('POST', '/api/upload', true);
     xhr.send(formData);
 }
 
@@ -310,7 +322,41 @@ function addActionListeners() {
 
 // Download a file
 function downloadFile(id) {
-    window.location.href = `/api/download/${id}`;
+    const token = localStorage.getItem('token') || '';
+    fetch(`/api/download/${id}`, {
+        headers: {
+            'x-auth-token': token
+        }
+    })
+    .then(response => {
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+            return;
+        }
+        if (!response.ok) {
+            showToast('Download failed', 'error');
+            return;
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        if (!blob) return;
+        // Get the file name from the files array
+        const file = files.find(f => f.id === id);
+        const filename = file ? file.name : 'downloaded_file';
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    })
+    .catch(error => {
+        showToast('Download error', 'error');
+    });
 }
 
 // Delete a file
@@ -318,9 +364,11 @@ function deleteFile(id) {
     if (!confirm('Are you sure you want to delete this file?')) {
         return;
     }
-    
     fetch(`/api/files/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+            'x-auth-token': localStorage.getItem('token') || ''
+        }
     })
     .then(response => response.json())
     .then(data => {
@@ -432,7 +480,7 @@ function showToast(message, type = '') {
 
 // Logout function
 function logout() {
-    localStorage.removeItem('authenticated');
+    localStorage.removeItem('token');
     window.location.href = 'login.html';
 }
 

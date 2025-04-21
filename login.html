@@ -153,43 +153,44 @@
     </div>
 
     <script>
-        // Check if user is already logged in - update to use localStorage
+        // Check if user is already logged in
         function checkAuth() {
-            if (localStorage.getItem('authenticated') === 'true') {
+            if (localStorage.getItem('token')) {
                 window.location.href = 'index.html';
             }
         }
-
-        // Run auth check when page loads
         checkAuth();
 
-        // Handle login form submission
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             const errorMessage = document.getElementById('errorMessage');
-            
-            // Check credentials
-            if (username === 'admin' && password === 'Giveme200$') {
-                // Set authentication in localStorage instead of sessionStorage
-                localStorage.setItem('authenticated', 'true');
-                // Redirect to main page
-                window.location.href = 'index.html';
-            } else {
-                // Show error message
+
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.token) {
+                    localStorage.setItem('token', data.token);
+                    window.location.href = 'index.html';
+                } else {
+                    errorMessage.style.display = 'block';
+                    document.getElementById('password').value = '';
+                }
+            })
+            .catch(() => {
                 errorMessage.style.display = 'block';
-                // Clear password field
                 document.getElementById('password').value = '';
-            }
+            });
         });
-        
-        // Handle logout
-        document.getElementById('logoutBtn').addEventListener('click', function() {
-            // Clear authentication from localStorage
-            localStorage.removeItem('authenticated');
-            // Reload the page
+
+        // Logout logic (if present)
+        document.getElementById('logoutBtn')?.addEventListener('click', function() {
+            localStorage.removeItem('token');
             window.location.reload();
         });
     </script>
