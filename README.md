@@ -8,6 +8,5 @@
   
  ## Than to start run: 
     node server.js 
- 
-    thats it. u will have a running server.
+ thats it. u will have a running server.
  
