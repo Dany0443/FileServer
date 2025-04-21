@@ -28,7 +28,7 @@ A Google Drive-like file storage application for you and your friends, built wit
 
 4. **Start the server**
 - Run:
--```bash
+- ```bash
    npm server
   
 The server will start on http://localhost:3000 by default.
