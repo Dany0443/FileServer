@@ -19,7 +19,7 @@ A Google Drive-like file storage application for you and your friends, built wit
 2. **Install dependencies**  
    Open a terminal in the project folder and run:
    ```bash
-   npm install express multer bcrypt
+   npm install express multer bcrypt compresion cors
    
 3. **Configure users**
  - Edit users.
