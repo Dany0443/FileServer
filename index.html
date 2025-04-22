@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WJT Project</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
+    <!-- Add Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
     <div class="header">
@@ -14,10 +15,17 @@
             <span>WJT Project</span>
         </div>
         <div class="header-actions">
-            <button id="uploadBtn" class="upload-btn">
-                <i class="fas fa-upload"></i>
-                <span>Upload</span>
-            </button>
+            <div class="upload-container">
+                <button id="upload-btn" class="btn primary">
+                    <i class="fas fa-upload"></i>
+                    <span>Upload</span>
+                </button>
+                <input type="file" id="file-input" style="display: none;">
+                <div class="progress-container" style="display: none;">
+                    <div class="progress-label">Uploading: <span id="upload-status">0%</span></div>
+                    <progress id="upload-progress" value="0" max="100"></progress>
+                </div>
+            </div>
             <button id="logoutBtn" class="logout-btn">Logout</button>
         </div>
     </div>

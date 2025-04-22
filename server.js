@@ -5,6 +5,7 @@ const fs = require('fs');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const cors = require('cors');
+const zlib = require('zlib');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,16 +14,14 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 
 // Configure Express to handle large requests
-// Increase the limit for JSON payloads
-app.use(express.json({ limit: '10gb' }));
-// Increase the limit for URL-encoded payloads
-app.use(express.urlencoded({ extended: true, limit: '10gb' }));
+app.use(express.json({ limit: '20gb' }));
+app.use(express.urlencoded({ extended: true, limit: '20gb' }));
 
-// Serve static files from the current directory
-app.use(express.static(path.join(__dirname)));
+// Serve static files
+app.use(express.static(__dirname));
 
 // Define storage location on another drive
-const STORAGE_PATH = 'C:\\FSV';
+const STORAGE_PATH = path.resolve(process.platform === 'win32' ? 'C:\\FSV' : '/mnt/hdd0/FSV');
 
 // Create storage directory if it doesn't exist
 if (!fs.existsSync(STORAGE_PATH)) {
@@ -48,7 +47,7 @@ const storage = multer.diskStorage({
 const upload = multer({ 
     storage: storage,
     limits: {
-        fileSize: 10 * 1024 * 1024 * 1024, // 10GB in bytes
+        fileSize: 20 * 1024 * 1024 * 1024, // 20GB in bytes
     }
 });
 
@@ -66,9 +65,43 @@ function loadUsers() {
 loadUsers();
 
 // In-memory token store (for demo; use Redis or DB for production)
-const tokens = new Map();
+// Replace the in-memory token store with file-based storage
+// const tokens = new Map(); // Remove this line
 
-// Login endpoint
+// File path for token storage
+const TOKENS_FILE = path.join(__dirname, 'tokens.json');
+
+// Load tokens from file or initialize empty object
+let tokens = {};
+function loadTokens() {
+    try {
+        if (fs.existsSync(TOKENS_FILE)) {
+            tokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+            console.log('Tokens loaded from file');
+        } else {
+            tokens = {};
+            saveTokens();
+            console.log('New tokens file created');
+        }
+    } catch (err) {
+        console.error('Failed to load tokens:', err.message);
+        tokens = {};
+    }
+}
+
+// Save tokens to file
+function saveTokens() {
+    try {
+        fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens), 'utf8');
+    } catch (err) {
+        console.error('Failed to save tokens:', err.message);
+    }
+}
+
+// Load tokens on startup
+loadTokens();
+
+// Login endpoint - update to use file storage
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const user = users.find(u => u.username === username);
@@ -77,22 +110,41 @@ app.post('/api/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // Generate a secure random token
     const token = crypto.randomBytes(32).toString('hex');
-    tokens.set(token, username);
+    
+    // Store token with username and expiration (optional)
+    tokens[token] = {
+        username: username,
+        created: new Date().toISOString()
+    };
+    
+    // Save tokens to file
+    saveTokens();
 
     res.json({ token });
 });
 
-// Middleware to protect API endpoints
+// Middleware to protect API endpoints - update to use file storage
 function requireAuth(req, res, next) {
     const token = req.headers['x-auth-token'];
-    if (token && tokens.has(token)) {
-        req.username = tokens.get(token);
+    if (token && tokens[token]) {
+        req.username = tokens[token].username;
         next();
     } else {
         res.status(401).json({ error: 'Unauthorized' });
     }
 }
+
+// Add a logout endpoint (optional but recommended)
+app.post('/api/logout', requireAuth, (req, res) => {
+    const token = req.headers['x-auth-token'];
+    if (token && tokens[token]) {
+        delete tokens[token];
+        saveTokens();
+    }
+    res.json({ success: true });
+});
 
 // Protect all file API endpoints
 app.get('/api/files', requireAuth, (req, res) => {
@@ -109,7 +161,11 @@ app.get('/api/files', requireAuth, (req, res) => {
                         resolve(null);
                         return;
                     }
-                    const originalFilename = filename.substring(filename.indexOf('-', filename.indexOf('-') + 1) + 1);
+                    // Extract original filename using a more robust method
+                    const parts = filename.split('-');
+                    // Skip the first two parts (timestamp and random number)
+                    const originalFilename = parts.slice(2).join('-');
+                    
                     fileList.push({
                         id: filename,
                         name: originalFilename,
@@ -129,40 +185,100 @@ app.get('/api/files', requireAuth, (req, res) => {
     });
 });
 
+// Upload endpoint (single, fixed)
 app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+    // Only compress if not already compressed
+    const compressedExtensions = ['.zip', '.rar', '.7z', '.gz', '.jpg', '.jpeg', '.png', '.mp4', '.mp3', '.webm', '.avi', '.mov', '.pdf'];
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    if (!compressedExtensions.includes(ext)) {
+        // Compress and save as .gz
+        const inp = fs.createReadStream(file.path);
+        const out = fs.createWriteStream(file.path + '.gz');
+        inp.pipe(zlib.createGzip()).pipe(out).on('finish', () => {
+            fs.unlinkSync(file.path); // Remove original
+            fs.renameSync(file.path + '.gz', file.path); // Rename compressed to original
+            res.json({
+                success: true,
+                id: file.filename,
+                name: file.originalname,
+                size: file.size,
+                type: file.mimetype,
+                timestamp: new Date()
+            });
+        });
+    } else {
+        res.json({
+            success: true,
+            id: file.filename,
+            name: file.originalname,
+            size: file.size,
+            type: file.mimetype,
+            timestamp: new Date()
+        });
     }
-    res.json({
-        id: req.file.filename,
-        name: req.file.originalname,
-        size: req.file.size,
-        type: req.file.mimetype,
-        timestamp: new Date()
-    });
 });
 
 app.get('/api/download/:id', requireAuth, (req, res) => {
     const filename = req.params.id;
     const filePath = path.join(STORAGE_PATH, filename);
+
     fs.access(filePath, fs.constants.F_OK, (err) => {
         if (err) {
             return res.status(404).json({ error: 'File not found' });
         }
-        const originalFilename = filename.substring(filename.indexOf('-', filename.indexOf('-') + 1) + 1);
-        res.setHeader('Content-Disposition', `attachment; filename="${originalFilename}"`);
-        res.sendFile(filePath);
+
+        // Extract original filename using the same robust method
+        const parts = filename.split('-');
+        const originalFilename = parts.slice(2).join('-');
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+
+        // Handle range requests for resumable downloads
+        const range = req.headers.range;
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunkSize = (end - start) + 1;
+
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunkSize,
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`
+            });
+
+            const stream = fs.createReadStream(filePath, { start, end });
+            stream.pipe(res);
+        } else {
+            res.writeHead(200, {
+                'Content-Length': fileSize,
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`,
+                'Accept-Ranges': 'bytes'
+            });
+
+            const stream = fs.createReadStream(filePath);
+            stream.pipe(res);
+        }
     });
 });
 
+// Add this new endpoint to match the client-side URL
 app.delete('/api/files/:id', requireAuth, (req, res) => {
-    const filename = req.params.id;
-    const filePath = path.join(STORAGE_PATH, filename);
+    const fileId = req.params.id;
+    const filePath = path.join(STORAGE_PATH, fileId);
     fs.unlink(filePath, (err) => {
         if (err) {
-            return res.status(500).json({ error: err.message });
+            return res.status(500).json({ error: 'Error deleting file' });
         }
-        res.json({ success: true, message: 'File deleted successfully' });
+        res.json({ success: true });
     });
 });
 

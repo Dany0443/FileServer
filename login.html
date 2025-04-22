@@ -156,7 +156,10 @@
         // Check if user is already logged in
         function checkAuth() {
             if (localStorage.getItem('token')) {
-                window.location.href = 'index.html';
+                // Add a small delay to ensure token is valid
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 300);
             }
         }
         checkAuth();
@@ -169,17 +172,20 @@
 
             fetch('/api/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ username, password })
             })
-            .then(res => res.json())
+            .then(response => response.json())
             .then(data => {
                 if (data.token) {
                     localStorage.setItem('token', data.token);
+                    // Remove this line if it exists:
+                    // localStorage.setItem('authenticated', 'true');
                     window.location.href = 'index.html';
                 } else {
-                    errorMessage.style.display = 'block';
-                    document.getElementById('password').value = '';
+                    showError(data.error || 'Login failed');
                 }
             })
             .catch(() => {

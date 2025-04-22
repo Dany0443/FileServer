@@ -1,10 +1,10 @@
 [
   {
-    "username": "dan",
-    "password": "hashedpassword"
+    "username": "Dan",
+    "password": "$2a$12$AR8olNJ5vuxUfsjn7g4dcuU3QR.aYxnMpcORyuyBm5I8vMroK9632"
   },
   {
-    "username": "example",
+    "username": "alex",
     "password": "yourhashedpassword1"
   },
   {
