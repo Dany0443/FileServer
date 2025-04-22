@@ -5,11 +5,12 @@ A Google Drive-like file storage application for you and your friends, built wit
 ## Features
 
 - User authentication (simple token-based login)
-- Upload and download files (up to 10GB per file)
+- Upload and download files (up to 20GB per file)
 - File listing in grid or list view
 - Delete files
 - Responsive web UI
 - Simple user management via `users.json`
+- Added a progress bar that shows how much the file has uploaded
 
 ## Setup
 
@@ -29,13 +30,13 @@ A Google Drive-like file storage application for you and your friends, built wit
 4. **Start the server**
 - Run:
 - ```bash
-   npm server.js
+   npm start.js
   
 The server will start on http://localhost:3000 by default.
 
 ## Notes
 - Uploaded files are stored in C:\FSV by default. You can change this path in server.js .
-- Maximum upload size is 10GB per file.
+- Maximum upload size is 20GB per file.
 - For production, consider using a persistent token store (like Redis) and HTTPS.
 
 ## Planned Features
