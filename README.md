@@ -23,8 +23,7 @@ A Google Drive-like file storage application for you and your friends, built wit
    npm install express multer bcrypt compresion cors
    
 3. **Configure users**
- - Edit users.
- - json to add your users.
+ - Edit users.json to add your users.
  - Passwords must be hashed with bcrypt.
 
 4. **Start the server**
