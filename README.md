@@ -44,6 +44,7 @@ The server will start on http://localhost:3000 by default.
 - File sharing and permissions
 - Search and sorting
 - Improved security
-
+- Other features that gives some flexibility
+  
   ## License
 This project is licensed under the MIT License. See LICENSE for details.
