@@ -33,12 +33,93 @@ gridViewBtn.addEventListener('click', () => switchView('grid'));
 document.addEventListener('DOMContentLoaded', () => {
     // Load files when the page is ready
     loadFiles();
+    
+    // Add logo click event
+    const appTitle = document.querySelector('.app-title');
+    if (appTitle) {
+        appTitle.style.cursor = 'pointer';
+        appTitle.addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+    }
+    
+    // Add sort dropdown if it exists
+    const sortDropdown = document.getElementById('sortDropdown');
+    if (sortDropdown) {
+        sortDropdown.addEventListener('change', () => {
+            sortAndDisplayFiles();
+        });
+    }
 });
 
 // Fetch and display files
 function loadFiles() {
     showLoading();
-    fetchFiles();
+    
+    fetch('/api/files', {
+        headers: {
+            'x-auth-token': localStorage.getItem('token') || ''
+        }
+    })
+    .then(response => {
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+            throw new Error('Unauthorized');
+        }
+        return response.json();
+    })
+    .then(data => {
+        files = data;
+        hideLoading();
+        updateFileCount();
+        
+        // Sort files if dropdown exists
+        const sortDropdown = document.getElementById('sortDropdown');
+        if (sortDropdown) {
+            sortAndDisplayFiles();
+        } else {
+            renderFiles();
+        }
+    })
+    .catch(error => {
+        console.error('Error loading files:', error);
+        hideLoading();
+        showToast('Error loading files', 'error');
+    });
+}
+
+// Sort and display files based on selected option
+function sortAndDisplayFiles() {
+    const sortDropdown = document.getElementById('sortDropdown');
+    if (!sortDropdown) {
+        renderFiles();
+        return;
+    }
+    
+    const sortOption = sortDropdown.value;
+    let sortedFiles = [...files]; // Create a copy of the files array
+    
+    switch(sortOption) {
+        case 'newest':
+            sortedFiles.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            break;
+        case 'oldest':
+            sortedFiles.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            break;
+        case 'largest':
+            sortedFiles.sort((a, b) => b.size - a.size);
+            break;
+        case 'smallest':
+            sortedFiles.sort((a, b) => a.size - b.size);
+            break;
+    }
+    
+    // Store the sorted files temporarily and render
+    const tempFiles = files;
+    files = sortedFiles;
+    renderFiles();
+    files = tempFiles;
 }
 
 // Logout function
@@ -192,34 +273,6 @@ function formatDate(dateString) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
-// Fetch files from server
-function fetchFiles() {
-    fetch('/api/files', {
-        headers: {
-            'x-auth-token': localStorage.getItem('token') || ''
-        }
-    })
-    .then(response => {
-        if (response.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = 'login.html';
-            return [];
-        }
-        return response.json();
-    })
-    .then(data => {
-        files = data;
-        hideLoading();
-        updateFileCount();
-        renderFiles();
-    })
-    .catch(error => {
-        console.error('Error loading files:', error);
-        hideLoading();
-        showToast('Error loading files', 'error');
-    });
-}
-
 // Render files based on current view
 function renderFiles() {
     // Remove any existing file views
@@ -284,7 +337,7 @@ function renderListView() {
             <td>${formatDate(file.timestamp)}</td>
             <td>
                 <div class="file-actions">
-                    <button class="file-action-btn download" onclick="startChunkedDownload('${file.id}', '${file.name.replace(/'/g, "\\'")}', ${file.size})">
+                    <button class="file-action-btn download" onclick="downloadFile('${file.id}', '${file.name.replace(/'/g, "\\'")}')">
                         <i class="fas fa-download"></i>
                     </button>
                     <button class="file-action-btn delete" onclick="deleteFile('${file.id}')">
@@ -317,7 +370,7 @@ function renderGridView() {
                 <div class="file-info">${formatFileSize(file.size)} · ${formatDate(file.timestamp)}</div>
             </div>
             <div class="file-actions">
-                <button class="file-action-btn download" onclick="startChunkedDownload('${file.id}', '${file.name.replace(/'/g, "\\'")}', ${file.size})">
+                <button class="file-action-btn download" onclick="downloadFile('${file.id}', '${file.name.replace(/'/g, "\\'")}')">
                     <i class="fas fa-download"></i>
                 </button>
                 <button class="file-action-btn delete" onclick="deleteFile('${file.id}')">
@@ -332,8 +385,46 @@ function renderGridView() {
 }
 
 // Download file
-function downloadFile(fileId) {
-    window.location.href = `/api/download/${fileId}?token=${localStorage.getItem('token')}`;
+function downloadFile(fileId, fileName) {
+    const token = localStorage.getItem('token');
+    showLoading();
+    fetch(`/api/download/${encodeURIComponent(fileId)}?token=${encodeURIComponent(token)}`)
+        .then(async response => {
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                const data = await response.json();
+                if (data.direct && data.url) {
+                    // Large file: redirect to static URL
+                    hideLoading();
+                    window.location.href = data.url;
+                    return;
+                } else if (data.error) {
+                    hideLoading();
+                    showToast(data.error, 'error');
+                    return;
+                }
+            }
+            // Normal file download
+            const disposition = response.headers.get('content-disposition');
+            let downloadName = fileName;
+            if (disposition && disposition.includes('filename=')) {
+                downloadName = decodeURIComponent(disposition.split('filename=')[1].replace(/\"/g, ''));
+            }
+            response.blob().then(blob => {
+                hideLoading();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = downloadName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            });
+        })
+        .catch(err => {
+            hideLoading();
+            showToast('Download failed: ' + err.message, 'error');
+        });
 }
 
 // Delete file
@@ -342,7 +433,7 @@ function deleteFile(fileId) {
         return;
     }
     
-    fetch(`/api/files/${fileId}`, {  // Changed from /api/delete/${fileId} to /api/files/${fileId}
+    fetch(`/api/files/${fileId}`, {
         method: 'DELETE',
         headers: {
             'x-auth-token': localStorage.getItem('token') || ''
@@ -365,68 +456,6 @@ function deleteFile(fileId) {
         showToast('Error deleting file', 'error');
     });
 }
-
-
-async function startChunkedDownload(fileId, fileName, fileSize) {
-    const chunkSize = 5 * 1024 * 1024; // 5MB per chunk
-    let downloaded = Number(localStorage.getItem('downloaded_' + fileId)) || 0;
-    let chunks = [];
-    let totalChunks = Math.ceil(fileSize / chunkSize);
-
-    // Try to load previous chunks if resuming
-    if (window.downloadChunks && window.downloadChunks[fileId]) {
-        chunks = window.downloadChunks[fileId];
-    } else {
-        chunks = new Array(totalChunks).fill(null);
-        window.downloadChunks = window.downloadChunks || {};
-        window.downloadChunks[fileId] = chunks;
-    }
-
-    while (downloaded < fileSize) {
-        const start = downloaded;
-        const end = Math.min(downloaded + chunkSize - 1, fileSize - 1);
-
-        try {
-            const chunk = await fetchChunk(fileId, start, end);
-            chunks[Math.floor(start / chunkSize)] = chunk;
-            downloaded += chunk.byteLength;
-            localStorage.setItem('downloaded_' + fileId, downloaded);
-            // Optionally update a progress bar here
-        } catch (err) {
-            alert('Download interrupted. You can resume later.');
-            return;
-        }
-    }
-
-    // Assemble file
-    const blob = new Blob(chunks, { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    // Cleanup
-    localStorage.removeItem('downloaded_' + fileId);
-    delete window.downloadChunks[fileId];
-}
-
-async function fetchChunk(fileId, start, end) {
-    const response = await fetch(`/api/download/${fileId}`, {
-        headers: {
-            'x-auth-token': localStorage.getItem('token') || '',
-            'Range': `bytes=${start}-${end}`
-        }
-    });
-    if (!response.ok && response.status !== 206) throw new Error('Failed to fetch chunk');
-    return await response.arrayBuffer();
-}
-
-// Example usage: 
-// startChunkedDownload(file.id, file.name, file.size);
 
 // Set default view based on device width
 let currentView;
@@ -435,182 +464,3 @@ if (window.innerWidth <= 480) {
 } else {
     currentView = 'list';
 }
-
-// Render list view
-function renderListView() {
-    const table = document.createElement('table');
-    table.className = 'files-list';
-    
-    // Create table header
-    const thead = document.createElement('thead');
-    thead.innerHTML = `
-        <tr>
-            <th>Name</th>
-            <th>Size</th>
-            <th>Type</th>
-            <th>Date</th>
-            <th>Actions</th>
-        </tr>
-    `;
-    table.appendChild(thead);
-    
-    // Create table body
-    const tbody = document.createElement('tbody');
-    
-    files.forEach(file => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>
-                <div class="file-item">
-                    <i class="fas fa-file file-icon"></i>
-                    <span class="file-name">${file.name}</span>
-                </div>
-            </td>
-            <td>${formatFileSize(file.size)}</td>
-            <td>${file.type || 'Unknown'}</td>
-            <td>${formatDate(file.timestamp)}</td>
-            <td>
-                <div class="file-actions">
-                    <button class="file-action-btn download" onclick="startChunkedDownload('${file.id}', '${file.name.replace(/'/g, "\\'")}', ${file.size})">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="file-action-btn delete" onclick="deleteFile('${file.id}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-    
-    table.appendChild(tbody);
-    mainContent.appendChild(table);
-}
-
-// Render grid view
-function renderGridView() {
-    const grid = document.createElement('div');
-    grid.className = 'files-grid';
-    
-    files.forEach(file => {
-        const gridItem = document.createElement('div');
-        gridItem.className = 'grid-item';
-        gridItem.innerHTML = `
-            <div class="file-preview">
-                <i class="fas fa-file file-icon"></i>
-            </div>
-            <div class="file-details">
-                <div class="file-name">${file.name}</div>
-                <div class="file-info">${formatFileSize(file.size)} · ${formatDate(file.timestamp)}</div>
-            </div>
-            <div class="file-actions">
-                <button class="file-action-btn download" onclick="startChunkedDownload('${file.id}', '${file.name.replace(/'/g, "\\'")}', ${file.size})">
-                    <i class="fas fa-download"></i>
-                </button>
-                <button class="file-action-btn delete" onclick="deleteFile('${file.id}')">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        `;
-        grid.appendChild(gridItem);
-    });
-    
-    mainContent.appendChild(grid);
-}
-
-// Download file
-function downloadFile(fileId) {
-    window.location.href = `/api/download/${fileId}?token=${localStorage.getItem('token')}`;
-}
-
-// Delete file
-function deleteFile(fileId) {
-    if (!confirm('Are you sure you want to delete this file?')) {
-        return;
-    }
-    
-    fetch(`/api/files/${fileId}`, {  // Changed from /api/delete/${fileId} to /api/files/${fileId}
-        method: 'DELETE',
-        headers: {
-            'x-auth-token': localStorage.getItem('token') || ''
-        }
-    })
-    .then(response => {
-        if (response.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = 'login.html';
-            throw new Error('Unauthorized');
-        }
-        return response.json();
-    })
-    .then(data => {
-        showToast('File deleted successfully', 'success');
-        loadFiles(); // Refresh file list
-    })
-    .catch(error => {
-        console.error('Delete error:', error);
-        showToast('Error deleting file', 'error');
-    });
-}
-
-
-async function startChunkedDownload(fileId, fileName, fileSize) {
-    const chunkSize = 5 * 1024 * 1024; // 5MB per chunk
-    let downloaded = Number(localStorage.getItem('downloaded_' + fileId)) || 0;
-    let chunks = [];
-    let totalChunks = Math.ceil(fileSize / chunkSize);
-
-    // Try to load previous chunks if resuming
-    if (window.downloadChunks && window.downloadChunks[fileId]) {
-        chunks = window.downloadChunks[fileId];
-    } else {
-        chunks = new Array(totalChunks).fill(null);
-        window.downloadChunks = window.downloadChunks || {};
-        window.downloadChunks[fileId] = chunks;
-    }
-
-    while (downloaded < fileSize) {
-        const start = downloaded;
-        const end = Math.min(downloaded + chunkSize - 1, fileSize - 1);
-
-        try {
-            const chunk = await fetchChunk(fileId, start, end);
-            chunks[Math.floor(start / chunkSize)] = chunk;
-            downloaded += chunk.byteLength;
-            localStorage.setItem('downloaded_' + fileId, downloaded);
-            // Optionally update a progress bar here
-        } catch (err) {
-            alert('Download interrupted. You can resume later.');
-            return;
-        }
-    }
-
-    // Assemble file
-    const blob = new Blob(chunks, { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    // Cleanup
-    localStorage.removeItem('downloaded_' + fileId);
-    delete window.downloadChunks[fileId];
-}
-
-async function fetchChunk(fileId, start, end) {
-    const response = await fetch(`/api/download/${fileId}`, {
-        headers: {
-            'x-auth-token': localStorage.getItem('token') || '',
-            'Range': `bytes=${start}-${end}`
-        }
-    });
-    if (!response.ok && response.status !== 206) throw new Error('Failed to fetch chunk');
-    return await response.arrayBuffer();
-}
-
-// Example usage: 
-// startChunkedDownload(file.id, file.name, file.size);

@@ -57,6 +57,8 @@ let users = [];
 function loadUsers() {
     try {
         users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        console.log('Users loaded from file');
+        // Additional logic to load users from the file can be added here if needed
     } catch (err) {
         console.error('Failed to load users.json:', err.message);
         process.exit(1);
@@ -195,6 +197,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     const ext = path.extname(file.originalname).toLowerCase();
 
     if (!compressedExtensions.includes(ext)) {
+        
         // Compress and save as .gz
         const inp = fs.createReadStream(file.path);
         const out = fs.createWriteStream(file.path + '.gz');
@@ -222,22 +225,40 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     }
 });
 
-app.get('/api/download/:id', requireAuth, (req, res) => {
+app.get('/api/download/:id', (req, res) => {
+    // Check for token in headers or query params
+    const token = req.headers['x-auth-token'] || req.query.token;
+    if (!token || !tokens[token]) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const username = tokens[token].username;
+    const fileId = req.params.id;
     const filename = req.params.id;
     const filePath = path.join(STORAGE_PATH, filename);
-
     fs.access(filePath, fs.constants.F_OK, (err) => {
         if (err) {
             return res.status(404).json({ error: 'File not found' });
         }
-
-        // Extract original filename using the same robust method
         const parts = filename.split('-');
         const originalFilename = parts.slice(2).join('-');
-
         const stat = fs.statSync(filePath);
         const fileSize = stat.size;
-
+        // If file is larger than 1GB, return direct static URL
+        if (fileSize > 1024 * 1024 * 1024) {
+            // Log large file download
+            const logLine = `[${new Date().toISOString()}] LARGE_DOWNLOAD user=${username} file=${originalFilename} id=${filename} size=${fileSize}\n`;
+            fs.appendFile(path.join(__dirname, 'large_downloads.log'), logLine, (err) => {
+                if (err) console.error('Failed to log large download:', err.message);
+            });
+            // Assuming Nginx/Apache is configured to serve STORAGE_PATH at /static/
+            const staticUrl = `/static/${encodeURIComponent(filename)}`;
+            return res.json({
+                direct: true,
+                url: staticUrl,
+                filename: originalFilename,
+                size: fileSize
+            });
+        }
         // Handle range requests for resumable downloads
         const range = req.headers.range;
         if (range) {
@@ -245,25 +266,22 @@ app.get('/api/download/:id', requireAuth, (req, res) => {
             const start = parseInt(parts[0], 10);
             const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
             const chunkSize = (end - start) + 1;
-
             res.writeHead(206, {
                 'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                 'Accept-Ranges': 'bytes',
                 'Content-Length': chunkSize,
                 'Content-Type': 'application/octet-stream',
-                'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`
+                'Content-Disposition': `attachment; filename=\"${encodeURIComponent(originalFilename)}\"`
             });
-
             const stream = fs.createReadStream(filePath, { start, end });
             stream.pipe(res);
         } else {
             res.writeHead(200, {
                 'Content-Length': fileSize,
                 'Content-Type': 'application/octet-stream',
-                'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`,
+                'Content-Disposition': `attachment; filename=\"${encodeURIComponent(originalFilename)}\"`,
                 'Accept-Ranges': 'bytes'
             });
-
             const stream = fs.createReadStream(filePath);
             stream.pipe(res);
         }
@@ -291,5 +309,5 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`Files are being stored at: ${STORAGE_PATH}`);
-    console.log(`Maximum file upload size: 10GB`);
+    console.log(`Maximum file upload size: 20GB`);
 });
