@@ -1,0 +1,18 @@
+[Unit]
+Description=FileServer Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/fileserver
+ExecStart=/usr/bin/node /opt/fileserver/start.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=fileserver
+Environment=NODE_ENV=production PORT=3000
+
+[Install]
+WantedBy=multi-user.target

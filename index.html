@@ -10,10 +10,10 @@
 </head>
 <body>
     <div class="header">
-        <div class="app-title">
+        <a href="index.html" class="app-title" style="text-decoration:none;color:inherit;">
             <i class="fas fa-cloud"></i>
             <span>WJT Project</span>
-        </div>
+        </a>
         <div class="header-actions">
             <div class="upload-container">
                 <button id="upload-btn" class="btn primary">
@@ -43,23 +43,8 @@
     </div>
     
     <div class="main-content" id="mainContent">
-        <div class="controls">
-            <div class="view-toggle">
-                <button id="gridViewBtn" class="active">Grid View</button>
-                <button id="listViewBtn">List View</button>
-            </div>
-            
-            <div class="sort-options">
-                <select id="sortDropdown">
-                    <option value="newest">Newest First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="largest">Largest First</option>
-                    <option value="smallest">Smallest First</option>
-                </select>
-            </div>
-            
-            <button id="uploadBtn">Upload File</button>
-            <button id="logoutBtn">Logout</button>
+        <div class="loading">
+            <div class="spinner"></div>
         </div>
     </div>
     

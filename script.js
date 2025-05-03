@@ -33,93 +33,12 @@ gridViewBtn.addEventListener('click', () => switchView('grid'));
 document.addEventListener('DOMContentLoaded', () => {
     // Load files when the page is ready
     loadFiles();
-    
-    // Add logo click event
-    const appTitle = document.querySelector('.app-title');
-    if (appTitle) {
-        appTitle.style.cursor = 'pointer';
-        appTitle.addEventListener('click', () => {
-            window.location.href = 'index.html';
-        });
-    }
-    
-    // Add sort dropdown if it exists
-    const sortDropdown = document.getElementById('sortDropdown');
-    if (sortDropdown) {
-        sortDropdown.addEventListener('change', () => {
-            sortAndDisplayFiles();
-        });
-    }
 });
 
 // Fetch and display files
 function loadFiles() {
     showLoading();
-    
-    fetch('/api/files', {
-        headers: {
-            'x-auth-token': localStorage.getItem('token') || ''
-        }
-    })
-    .then(response => {
-        if (response.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = 'login.html';
-            throw new Error('Unauthorized');
-        }
-        return response.json();
-    })
-    .then(data => {
-        files = data;
-        hideLoading();
-        updateFileCount();
-        
-        // Sort files if dropdown exists
-        const sortDropdown = document.getElementById('sortDropdown');
-        if (sortDropdown) {
-            sortAndDisplayFiles();
-        } else {
-            renderFiles();
-        }
-    })
-    .catch(error => {
-        console.error('Error loading files:', error);
-        hideLoading();
-        showToast('Error loading files', 'error');
-    });
-}
-
-// Sort and display files based on selected option
-function sortAndDisplayFiles() {
-    const sortDropdown = document.getElementById('sortDropdown');
-    if (!sortDropdown) {
-        renderFiles();
-        return;
-    }
-    
-    const sortOption = sortDropdown.value;
-    let sortedFiles = [...files]; // Create a copy of the files array
-    
-    switch(sortOption) {
-        case 'newest':
-            sortedFiles.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            break;
-        case 'oldest':
-            sortedFiles.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            break;
-        case 'largest':
-            sortedFiles.sort((a, b) => b.size - a.size);
-            break;
-        case 'smallest':
-            sortedFiles.sort((a, b) => a.size - b.size);
-            break;
-    }
-    
-    // Store the sorted files temporarily and render
-    const tempFiles = files;
-    files = sortedFiles;
-    renderFiles();
-    files = tempFiles;
+    fetchFiles();
 }
 
 // Logout function
@@ -273,6 +192,34 @@ function formatDate(dateString) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
+// Fetch files from server
+function fetchFiles() {
+    fetch('/api/files', {
+        headers: {
+            'x-auth-token': localStorage.getItem('token') || ''
+        }
+    })
+    .then(response => {
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+            return [];
+        }
+        return response.json();
+    })
+    .then(data => {
+        files = data;
+        hideLoading();
+        updateFileCount();
+        renderFiles();
+    })
+    .catch(error => {
+        console.error('Error loading files:', error);
+        hideLoading();
+        showToast('Error loading files', 'error');
+    });
+}
+
 // Render files based on current view
 function renderFiles() {
     // Remove any existing file views
@@ -337,8 +284,7 @@ function renderListView() {
             <td>${formatDate(file.timestamp)}</td>
             <td>
                 <div class="file-actions">
-                    <button class="file-action-btn download" onclick="downloadFile('${file.id}', '${file.name.replace(/'/g, "\\'")}')">
-                        <i class="fas fa-download"></i>
+                    <button class="file-action-btn download" onclick="downloadFile('${file.id}', '${file.name.replace(/'/g, "\\'")}')">                        <i class="fas fa-download"></i>
                     </button>
                     <button class="file-action-btn delete" onclick="deleteFile('${file.id}')">
                         <i class="fas fa-trash"></i>
@@ -370,8 +316,7 @@ function renderGridView() {
                 <div class="file-info">${formatFileSize(file.size)} · ${formatDate(file.timestamp)}</div>
             </div>
             <div class="file-actions">
-                <button class="file-action-btn download" onclick="downloadFile('${file.id}', '${file.name.replace(/'/g, "\\'")}')">
-                    <i class="fas fa-download"></i>
+                <button class="file-action-btn download" onclick="downloadFile('${file.id}', '${file.name.replace(/'/g, "\\'")}')">                        <i class="fas fa-download"></i>
                 </button>
                 <button class="file-action-btn delete" onclick="deleteFile('${file.id}')">
                     <i class="fas fa-trash"></i>
@@ -384,47 +329,34 @@ function renderGridView() {
     mainContent.appendChild(grid);
 }
 
-// Download file
+// Download file - simplified for direct downloads without resuming
 function downloadFile(fileId, fileName) {
-    const token = localStorage.getItem('token');
-    showLoading();
-    fetch(`/api/download/${encodeURIComponent(fileId)}?token=${encodeURIComponent(token)}`)
-        .then(async response => {
-            if (response.headers.get('content-type')?.includes('application/json')) {
-                const data = await response.json();
-                if (data.direct && data.url) {
-                    // Large file: redirect to static URL
-                    hideLoading();
-                    window.location.href = data.url;
-                    return;
-                } else if (data.error) {
-                    hideLoading();
-                    showToast(data.error, 'error');
-                    return;
-                }
-            }
-            // Normal file download
-            const disposition = response.headers.get('content-disposition');
-            let downloadName = fileName;
-            if (disposition && disposition.includes('filename=')) {
-                downloadName = decodeURIComponent(disposition.split('filename=')[1].replace(/\"/g, ''));
-            }
-            response.blob().then(blob => {
-                hideLoading();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = downloadName;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-            });
-        })
-        .catch(err => {
-            hideLoading();
-            showToast('Download failed: ' + err.message, 'error');
-        });
+    // Show toast notification that download is starting
+    showToast('Starting download...', 'info');
+    
+    // Create a direct download link
+    const token = localStorage.getItem('token') || '';
+    const downloadUrl = `/api/download/${fileId}?token=${encodeURIComponent(token)}&filename=${encodeURIComponent(fileName)}`;
+    
+    // Create a temporary anchor element to trigger the download
+    const downloadLink = document.createElement('a');
+    downloadLink.href = downloadUrl;
+    downloadLink.download = fileName; // Set the download attribute
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    
+    // Trigger the download
+    downloadLink.click();
+    
+    // Clean up
+    setTimeout(() => {
+        document.body.removeChild(downloadLink);
+    }, 100);
+    
+    // Inform user that if download fails, they need to try again
+    setTimeout(() => {
+        showToast('If download fails, please try again', 'info');
+    }, 3000);
 }
 
 // Delete file

@@ -12,7 +12,7 @@ A Google Drive-like file storage application for you and your friends, built wit
 - Simple user management via `users.json`
 - Added a progress bar that shows how much the file has uploaded
 
-## Setup
+## Setup (Windows)
 
 1. **Clone the repository**  
    Download or clone this repository to your local machine.
@@ -20,22 +20,39 @@ A Google Drive-like file storage application for you and your friends, built wit
 2. **Install dependencies**  
    Open a terminal in the project folder and run:
    ```bash
-   npm install express multer bcrypt compresion cors
+   npm install
+   ```
    
 3. **Configure users**
- - Edit users.
- - json to add your users.
- - Passwords must be hashed with bcrypt.
+   - Edit users.json to add your users.
+   - Passwords must be hashed with bcrypt.
 
 4. **Start the server**
-- Run:
-- ```bash
-   npm start.js
+   - Run:
+   ```bash
+   node start.js
+   ```
   
-The server will start on http://localhost:3000 by default.
+The server will start on http://localhost:3445 by default.
+
+## Linux Deployment
+
+For deploying on a Linux server with Nginx:
+
+1. **Update the storage path**
+   - The application is configured to use `/mnt/hdd/storage` on Linux systems
+   - Make sure this directory exists and has proper permissions
+
+2. **Use the provided Nginx configuration**
+   - A ready-to-use Nginx configuration file is included (`nginx.conf`)
+   - This is configured for the domain `webjuniors.team`
+
+3. **Follow the deployment guide**
+   - See `LINUX-DEPLOYMENT.md` for detailed instructions
+   - You can use the automated deployment script `deploy-linux.sh`
 
 ## Notes
-- Uploaded files are stored in C:\FSV by default. You can change this path in server.js .
+- Uploaded files are stored in C:\FSV on Windows or `/mnt/hdd/storage` on Linux by default.
 - Maximum upload size is 20GB per file.
 - For production, consider using a persistent token store (like Redis) and HTTPS.
 

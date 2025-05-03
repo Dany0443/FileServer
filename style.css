@@ -479,28 +479,4 @@ progress::-moz-progress-bar {
     .file-info {
         font-size: 0.7rem;
     }
-    .sort-options {
-        margin-right: 10px;
-    }
-    
-    #sortDropdown {
-        padding: 8px 12px;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-        background-color: #fff;
-        font-size: 14px;
-        cursor: pointer;
-        outline: none;
-    }
-    
-    #sortDropdown:hover {
-        border-color: #888;
-    }
-    
-    /* For dark mode compatibility if you have it */
-    .dark-mode #sortDropdown {
-        background-color: #333;
-        color: #fff;
-        border-color: #555;
-    }
 }

@@ -1,25 +1,28 @@
-const express = require('express');
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
-const crypto = require('crypto');
-const cors = require('cors');
-const zlib = require('zlib');
-const jwt = require('jsonwebtoken');
+// Removed zlib as we don't want compression
+const fastify = require('fastify')({ 
+    logger: true,
+    keepAliveTimeout: 600000, // 10 minutes (600,000 ms)
+    requestTimeout: 0, // No request timeout
+    bodyLimit: 20 * 1024 * 1024 * 1024, // 20GB body size limit
+    maxParamLength: 1048576, // Increase max param length for large URLs if needed
+    ignoreTrailingSlash: true,
+    querystringParser: str => {
+        const params = new URLSearchParams(str);
+        const result = {};
+        for (const [key, value] of params.entries()) {
+            result[key] = value;
+        }
+        return result;
+    } // Ensure query parameters are properly parsed
+});
+const fastifyCors = require('@fastify/cors');
+const fastifyMultipart = require('@fastify/multipart');
 
-const app = express();
+
 const PORT = process.env.PORT || 3445;
-
-// Enable CORS
-app.use(cors());
-
-// Configure Express to handle large requests
-app.use(express.json({ limit: '20gb' }));
-app.use(express.urlencoded({ extended: true, limit: '20gb' }));
-
-// Serve static files
-app.use(express.static(__dirname));
 
 // Define storage location on another drive
 const STORAGE_PATH = path.resolve(process.platform === 'win32' ? 'C:\\FSV' : '/mnt/hdd/storage');
@@ -34,23 +37,8 @@ if (!fs.existsSync(STORAGE_PATH)) {
     }
 }
 
-// Configure multer for file storage
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, STORAGE_PATH);
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname);
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: {
-        fileSize: 20 * 1024 * 1024 * 1024, // 20GB in bytes
-    }
-});
+// Storage path is configured for file uploads
+// Maximum file size is set to 20GB in the fastifyMultipart registration
 
 // Load users from whitelist file
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -65,9 +53,6 @@ function loadUsers() {
 }
 loadUsers();
 
-// In-memory token store (for demo; use Redis or DB for production)
-// Replace the in-memory token store with file-based storage
-// const tokens = new Map(); // Remove this line
 
 // File path for token storage
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
@@ -102,232 +87,161 @@ function saveTokens() {
 // Load tokens on startup
 loadTokens();
 
-// Login endpoint - update to use file storage
-app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
-    const user = users.find(u => u.username === username);
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+// All Express endpoints have been removed
+// Using only Fastify endpoints below
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
-
-    // Generate a secure random token
-    const token = crypto.randomBytes(32).toString('hex');
-    
-    // Store token with username and expiration (optional)
-    tokens[token] = {
-        username: username,
-        created: new Date().toISOString()
-    };
-    
-    // Save tokens to file
-    saveTokens();
-
-    res.json({ token });
-});
-
-// Middleware to protect API endpoints - update to use file storage
-function requireAuth(req, res, next) {
-    const token = req.headers['x-auth-token'];
-    if (token && tokens[token]) {
-        req.username = tokens[token].username;
-        next();
-    } else {
-        res.status(401).json({ error: 'Unauthorized' });
-    }
-}
-
-// Add a logout endpoint (optional but recommended)
-app.post('/api/logout', requireAuth, (req, res) => {
-    const token = req.headers['x-auth-token'];
-    if (token && tokens[token]) {
-        delete tokens[token];
-        saveTokens();
-    }
-    res.json({ success: true });
-});
-
-// Protect all file API endpoints
-app.get('/api/files', requireAuth, (req, res) => {
-    fs.readdir(STORAGE_PATH, (err, files) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
+fastify.register(fastifyCors);
+fastify.register(fastifyMultipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024 } });
+fastify.addHook('preHandler', (request, reply, done) => {
+    if (request.routerPath && request.routerPath.startsWith('/api') && request.routerPath !== '/api/login') {
+        // Check for token in headers first, then in query parameters
+        const headerToken = request.headers['x-auth-token'];
+        const queryToken = request.query && request.query.token;
+        const token = headerToken || queryToken;
+        
+        if (token && tokens[token]) {
+            request.username = tokens[token].username;
+            done();
+        } else {
+            reply.status(401).send({ error: 'Unauthorized' });
         }
-        const fileList = [];
-        const promises = files.map(filename => {
-            return new Promise((resolve) => {
-                const filePath = path.join(STORAGE_PATH, filename);
-                fs.stat(filePath, (err, stats) => {
-                    if (err) {
-                        resolve(null);
-                        return;
-                    }
-                    // Extract original filename using a more robust method
-                    const parts = filename.split('-');
-                    // Skip the first two parts (timestamp and random number)
-                    const originalFilename = parts.slice(2).join('-');
-                    
-                    fileList.push({
-                        id: filename,
-                        name: originalFilename,
-                        size: stats.size,
-                        type: path.extname(filename).substring(1),
-                        timestamp: stats.mtime,
-                        path: filePath
-                    });
-                    resolve();
-                });
-            });
-        });
-        Promise.all(promises).then(() => {
-            fileList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            res.json(fileList);
-        });
+    } else {
+        done();
+    }
+});
+fastify.get('/api/files', async (request, reply) => {
+    try {
+        const files = await fs.promises.readdir(STORAGE_PATH);
+        const fileList = await Promise.all(files.map(async filename => {
+            const filePath = path.join(STORAGE_PATH, filename);
+            try {
+                const stats = await fs.promises.stat(filePath);
+                const parts = filename.split('-');
+                const originalFilename = parts.slice(2).join('-');
+                return {
+                    id: filename,
+                    name: originalFilename,
+                    size: stats.size,
+                    type: path.extname(filename).substring(1),
+                    timestamp: stats.mtime,
+                    path: filePath
+                };
+            } catch {
+                return null;
+            }
+        }));
+        fileList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        reply.send(fileList.filter(Boolean));
+    } catch (err) {
+        reply.status(500).send({ error: err.message });
+    }
+});
+fastify.post('/api/upload', async (request, reply) => {
+    const data = await request.file();
+    if (!data) return reply.status(400).send({ error: 'No file uploaded' });
+    
+    // Simplified upload without compression
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const filename = uniqueSuffix + '-' + data.filename;
+    const filePath = path.join(STORAGE_PATH, filename);
+    const writeStream = fs.createWriteStream(filePath);
+    
+    await data.file.pipe(writeStream);
+    await new Promise((resolve, reject) => writeStream.on('finish', resolve).on('error', reject));
+    
+    // Simple response without compression
+    return reply.send({ 
+        success: true, 
+        id: filename, 
+        name: data.filename, 
+        size: writeStream.bytesWritten, 
+        type: data.mimetype, 
+        timestamp: new Date() 
     });
 });
-
-// Upload endpoint (single, fixed)
-app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: 'No file uploaded' });
-
-    // Only compress if not already compressed
-    const compressedExtensions = ['.zip', '.rar', '.7z', '.gz', '.jpg', '.jpeg', '.png', '.mp4', '.mp3', '.webm', '.avi', '.mov', '.pdf'];
-    const ext = path.extname(file.originalname).toLowerCase();
-
-    if (!compressedExtensions.includes(ext)) {
-        // Compress and save as .gz
-        const inp = fs.createReadStream(file.path);
-        const out = fs.createWriteStream(file.path + '.gz');
-        inp.pipe(zlib.createGzip()).pipe(out).on('finish', () => {
-            fs.unlinkSync(file.path); // Remove original
-            fs.renameSync(file.path + '.gz', file.path); // Rename compressed to original
-            res.json({
-                success: true,
-                id: file.filename,
-                name: file.originalname,
-                size: file.size,
-                type: file.mimetype,
-                timestamp: new Date()
-            });
-        });
-    } else {
-        res.json({
-            success: true,
-            id: file.filename,
-            name: file.originalname,
-            size: file.size,
-            type: file.mimetype,
-            timestamp: new Date()
-        });
-    }
-});
-
-app.get('/api/download/:id', requireAuth, (req, res) => {
-    const filename = req.params.id;
+fastify.get('/api/download/:id', async (request, reply) => {
+    const filename = request.params.id;
     const filePath = path.join(STORAGE_PATH, filename);
-
-    fs.access(filePath, fs.constants.F_OK, (err) => {
-        if (err) {
-            return res.status(404).json({ error: 'File not found' });
-        }
-
-        // Extract original filename using the same robust method
+    try {
+        await fs.promises.access(filePath, fs.constants.F_OK);
         const parts = filename.split('-');
         const originalFilename = parts.slice(2).join('-');
-
-        const stat = fs.statSync(filePath);
-        const fileSize = stat.size;
-
-        // Handle range requests for resumable downloads
-        const range = req.headers.range;
-        if (range) {
-            const parts = range.replace(/bytes=/, "").split("-");
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-            const chunkSize = (end - start) + 1;
-
-            res.writeHead(206, {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunkSize,
-                'Content-Type': 'application/octet-stream',
-                'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`
-            });
-
-            const stream = fs.createReadStream(filePath, { start, end });
-            stream.pipe(res);
-        } else {
-            res.writeHead(200, {
-                'Content-Length': fileSize,
-                'Content-Type': 'application/octet-stream',
-                'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`,
-                'Accept-Ranges': 'bytes'
-            });
-
-            const stream = fs.createReadStream(filePath);
-            stream.pipe(res);
-        }
-    });
+        const stat = await fs.promises.stat(filePath);
+        
+        // Set headers for non-resumable download
+        reply.raw.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${encodeURIComponent(originalFilename)}"`,
+            'Content-Length': stat.size,
+            // Removed Accept-Ranges header to disable resumable downloads
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-cache'
+        });
+        
+        // Simple stream without range support
+        const stream = fs.createReadStream(filePath);
+        stream.on('error', err => {
+            fastify.log.error(`Stream error: ${err.message}`);
+            reply.raw.end();
+        });
+        stream.pipe(reply.raw);
+    } catch (err) {
+        fastify.log.error(`Download error: ${err.message}`);
+        reply.status(404).send({ error: 'File not found or could not be accessed' });
+    }
+    return reply;
 });
-
-// Add this new endpoint to match the client-side URL
-app.delete('/api/files/:id', requireAuth, (req, res) => {
-    const fileId = req.params.id;
+fastify.delete('/api/files/:id', async (request, reply) => {
+    const fileId = request.params.id;
     const filePath = path.join(STORAGE_PATH, fileId);
-    fs.unlink(filePath, (err) => {
-        if (err) {
-            return res.status(500).json({ error: 'Error deleting file' });
-        }
-        res.json({ success: true });
-    });
+    try {
+        await fs.promises.unlink(filePath);
+        reply.send({ success: true });
+    } catch {
+        reply.status(500).send({ error: 'Error deleting file' });
+    }
 });
 
 // Serve the main HTML file
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+// Register static file serving
+fastify.register(require('@fastify/static'), {
+    root: path.join(__dirname),
+    prefix: '/' // optional: default '/'  
 });
 
-// Start the server
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Serve the main HTML file
+fastify.get('/', async (request, reply) => {
+    return reply.sendFile('index.html');
+});
+
+// Start Fastify server
+fastify.listen({ port: PORT }, (err, address) => {
+    if (err) {
+        console.error(err);
+        process.exit(1);
+    }
+    console.log(`Server running on ${address}`);
     console.log(`Files are being stored at: ${STORAGE_PATH}`);
     console.log(`Maximum file upload size: 20GB`);
 });
 
-// Secret for signing download tokens
-const DOWNLOAD_TOKEN_SECRET = process.env.DOWNLOAD_TOKEN_SECRET || 'supersecretkey';
-
-// Generate a presigned download URL with a short-lived JWT token
-app.get('/api/download-link/:filename', requireAuth, (req, res) => {
-    const { filename } = req.params;
-    // Check if user is allowed to access the file (implement your logic here)
-    // For demo, allow all authenticated users
-    const expiresIn = 5 * 60; // 5 minutes
-    const token = jwt.sign({
-        filename,
-        username: req.username
-    }, DOWNLOAD_TOKEN_SECRET, { expiresIn });
-    const url = `http://mydomain.com/files/${encodeURIComponent(filename)}?token=${token}`;
-    res.json({ url });
-});
-
-// Endpoint for Nginx to validate download token
-app.get('/api/validate-download', (req, res) => {
-    const token = req.headers['x-auth-token'];
-    const filePath = req.headers['x-file-path'];
-    if (!token || !filePath) {
-        return res.status(401).send('Unauthorized');
+// Add Fastify login endpoint using bcrypt
+fastify.post('/api/login', async (request, reply) => {
+    const { username, password } = request.body || {};
+    if (!username || !password) {
+        return reply.status(400).send({ error: 'Username and password required' });
     }
-    try {
-        const payload = jwt.verify(token, DOWNLOAD_TOKEN_SECRET);
-        // Check that the requested file matches the token
-        if (decodeURIComponent(filePath.replace(/^\/files\//, '')) !== payload.filename) {
-            return res.status(403).send('Forbidden');
-        }
-        // Optionally, check user permissions here
-        return res.status(200).send('OK');
-    } catch (err) {
-        return res.status(401).send('Unauthorized');
+    const user = users.find(u => u.username === username);
+    if (!user) {
+        return reply.status(401).send({ error: 'Invalid username or password' });
     }
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+        return reply.status(401).send({ error: 'Invalid username or password' });
+    }
+    // Generate token
+    const token = Math.random().toString(36).substr(2) + Date.now().toString(36);
+    tokens[token] = { username, created: Date.now() };
+    saveTokens();
+    reply.send({ token });
 });
