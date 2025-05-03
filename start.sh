@@ -1,3 +1,3 @@
 #!/bin/bash
-sudo npm install express cors multer compression bcrpt jsonwebtoken
+sudo npm install 
 sudo node start.js
