@@ -1,3 +1,5 @@
+## this project has been discontinued, because i made the new project [templink](https://link.webjuniors.team
+
 # FileServer
 
 A Google Drive-like file storage application for you and your friends, built with Node.js, Express, and Multer. Easily upload, download, and manage files through a modern web interface.
