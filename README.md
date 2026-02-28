@@ -1,4 +1,4 @@
-## this project has been discontinued, because i made the new project [templink](https://link.webjuniors.org)
+## this project has been discontinued, because i made the new project [templink](https://webjuniors.org/link/)
 
 # FileServer
 
